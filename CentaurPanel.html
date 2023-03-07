@@ -1,0 +1,432 @@
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.1.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+<div id="app">
+  
+  <div class="container">
+    <!-- Ai Reccomended -->
+    <div class="column clipList">
+      <div class="Capstonebox clipList">AI recommended Clips!</div>
+      <div style="height: 490px; overflow: auto;">
+        <div class="box" v-for="(clip, index) in AiClips" :key="index" v-on:click="handleClick(clip)">
+          <div>{{ clip.clipName }} </div>
+          <div> {{ clip.startTime }}  - {{ clip.endTime }}</div>
+        </div>
+      </div>
+      <div class="Capstonebox clipList">Refresh List</div>
+    </div>
+
+    <!-- Iframe Container -->
+    <div class="column">
+
+        <!-- Iframe Part -->
+        <div class="container">
+          <iframe
+            v-bind:src='this.playerURL'
+            width="960"
+            height="540"
+            allowfullscreen>
+          </iframe>
+        </div>
+
+        <!-- Clip Selector Panel -->
+        <div class="container"> 
+          <input v-model="url" placeholder="Livestream URL" style="width: 840px;"/>
+          <button v-on:click="findVodFromURL()" style="width: 100px; height: 25px;"> Find Clips! </button>
+          </div>
+          <div class="container"> 
+          <input v-model="viewedClip.clipName" placeholder="Clip Title" style="width: 560px;" /> 
+          <input v-model="viewedClip.startTime" placeholder="00:00:00" style="width: 120px;" maxlength="8" pattern="[0-9]{2}:[0-5][0-9]:[0-5][0-9]"/> 
+          <input v-model="viewedClip.endTime" placeholder="00:13:00" style="width: 120px;" maxlength="8" pattern="[0-9]{2}:[0-5][0-9]:[0-5][0-9]"/>
+          <button v-on:click="createClip()" style="width: 100px; height: 25px;"> Clip it! </button>
+        </div>
+
+        <!-- Error Messages For Panel -->
+        <div class="container"> {{ this.url }} </div>
+        <div class="container"> {{ this.viewedClip.clipName }} {{ this.viewedClip.startTime }} {{ this.viewedClip.endTime }} </div>
+        <div class="container"> {{ timeRegexCheck }} </div>
+        <div class="container"> {{ youtubeRegexCheck }} </div>
+        <div class="container"> {{ twitchRegexCheck }} </div>
+
+        <!-- Clip ChartJS -->
+        <div class = "container">
+          <input class="container" v-model="emoteSearch" placeholder="emote search (ex: LuL, Pog, etc)" style="width: 740px; height: 25px;"/> 
+          <button v-on:click="searchEmote(emoteSearch)" style="width: 120px; height: 25px;"> Emote Search </button>
+        </div>
+        <div class="container messageContainer" style="width: 960px;">
+          <canvas id="myChart" ></canvas>
+        </div>
+
+      </div>
+
+      <!-- Selected Clips Reccomended -->
+      <div class="column clipList">
+        <div class="Capstonebox clipList">Selected Clips!</div>
+        <div style="height: 490px; overflow: auto;">
+          <div class="box" v-for="(clip, index) in SelectedClips" :key="index" v-on:click="handleClick(clip)">
+            <div>{{ clip.clipName }} </div>
+            <div> {{ clip.startTime }}  - {{ clip.endTime }}</div>
+          </div>
+        </div>
+        <div class="Capstonebox clipList">Download The Clips</div>
+      </div>
+    
+  </div>
+</div>
+
+<script type="module">
+
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-app.js";
+  import { getFirestore, doc, getDocs, setDoc, getDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyB9Q4Fl_vNqQjTeTSX3VWaNsN4v7PQTJD8",
+    authDomain: "kentauros-computing.firebaseapp.com",
+    databaseURL: "https://kentauros-computing-default-rtdb.firebaseio.com",
+    projectId: "kentauros-computing",
+    storageBucket: "kentauros-computing.appspot.com",
+    messagingSenderId: "711840637112",
+    appId: "1:711840637112:web:0cc09b734fee079c54d44d",
+    measurementId: "G-91DMKSHKS5"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app)
+
+  const { createApp } = Vue
+
+  createApp({
+    data() {
+      return {
+
+        url: '',
+        playerURL: 'https://player.twitch.tv/?video=v1743798698&parent=raafaytariq.wixsite.com&autoplay=False&time=0',
+        viewedClip: {clipName: '', startTime: '', endTime: ''},
+        time: 0,
+
+        website: '',
+        vodID: '',
+        
+        chatArray: [{message:'test message',timestamp:'423.22'}],
+        vidDuration: 0,
+        
+        emoteSearch: "",
+        wordList: [""],
+        emoteYdata: [],
+
+        errorMessage: '',
+
+        AiClips: [
+          {clipName: 'example1', startTime: '00:00:01', endTime: '00:01:01'},      
+          ],
+        SelectedClips: [
+          {clipName: 'example2', startTime: '00:00:01', endTime: '00:43:01'},
+        ]
+      }
+    },
+    created() {
+    },
+    mounted() {
+      const ctx = document.getElementById('myChart');
+      this.chart = new Chart(ctx, {
+        type: 'line', // change chart type to 'line'
+        data: {
+          labels: this.durationHHMMSS,
+          datasets: [{
+            label: 'Message Frequency Score',
+            data: this.emoteYdata,
+            borderWidth: 3,
+            pointRadius: 5 // add this line to specify point radius
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              min: 0, // add this line to set y-axis minimum to 0
+              beginAtZero: true
+            }
+          },
+          plugins: {
+            zoom: {
+              zoom: {
+                wheel: {
+                  enabled: true,
+                },
+                pinch: {
+                  enabled: true
+                },
+                mode: 'xy'
+              },
+              pan: {
+                enabled: true,
+                mode: 'xy'
+              }
+            }
+          }
+        }
+      });
+    },
+    methods: {
+      updateChart() {
+      this.chart.data.labels = this.durationHHMMSS;
+      this.chart.data.datasets[0].data = this.emoteYdata;
+      this.chart.update();
+      },
+      handleClick(clip) {
+        this.viewedClip = clip
+      },
+      createClip() {
+        console.log('clip Created')
+      },
+      async findVodFromURL() {
+
+
+        const regexYoutube = /^https:\/\/www\.youtube\.com\/watch\?v=(\w{11}).*$/
+        const regexTwitch = /^https:\/\/www\.twitch\.tv\/videos\/(\d{10}).*$/
+
+        // check if url is Youtube
+        if (this.youtubeRegexCheck) {
+
+          this.vodID = this.url.match(regexYoutube)[1]
+          this.website = 'Youtube'
+
+        }
+        
+        // check if url is Twitch
+        if (this.twitchRegexCheck) {
+          
+          this.vodID = this.url.match(regexTwitch)[1]
+          this.website = 'Twitch'
+
+        }
+
+        const docRef = doc(db, "Livestreams", this.vodID);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+
+          const chatLogsRef = collection(db, 'Livestreams', this.vodID, 'ChatLogs');
+          const chatLogsSnapshot = await getDocs(chatLogsRef);
+
+          let TotalChatLogs = []
+          
+          chatLogsSnapshot.forEach((doc) => {
+
+            TotalChatLogs.push(doc.data()["Chats"]);
+
+          });
+
+          this.chatArray = TotalChatLogs[0];
+
+        } else {
+
+          const chatLogsRef = collection(db, 'Livestreams', this.vodID, 'ChatLogs');
+          const chatLogsSnapshot = await getDocs(chatLogsRef);
+
+          onSnapshot(chatLogsRef, (querySnapshot) => {
+
+            // For every doc that contains data append them and place on the website
+            let TotalChatLogs = [];
+            querySnapshot.forEach((doc) => {
+              TotalChatLogs = TotalChatLogs.concat(doc.data()['Chats']);
+              console.log(TotalChatLogs)
+            });
+            this.chatArray = TotalChatLogs;
+
+          });
+
+          const xhr = new XMLHttpRequest();
+          const httpReq = 'https://kentauros-api-v2-uqhathbjja-nn.a.run.app/analyzeVOD?vodID=' + this.vodID + '&website=' + this.website;
+          
+          console.log(httpReq);
+          xhr.onload = () => {
+            const data = JSON.parse(xhr.responseText);
+          };
+          
+          xhr.open('POST', httpReq);
+          xhr.send();
+
+        }
+      },
+      formatTime(timeInMinutes) {
+        let hours = Math.floor(timeInMinutes / 60);
+        let minutes = Math.floor(timeInMinutes % 60);
+        let seconds = Math.round((timeInMinutes % 1) * 60);
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      },
+      searchEmote(emoteString) {
+
+        // initialize the emote count and the time array
+        let emoteArrayCount = []
+        let timeArray = this.durationLinearTime
+
+        // check to make sure the array is able to be acted upon.
+        if (this.chatArray && this.chatArray.length > 0) {
+
+          // turn the message into lowercase for easier string search
+          // k to iterate through the timeArray
+          // currentCount is the iterable that is appended to the 
+          let searchWord = emoteString.toLowerCase()
+          let k = 0;
+          let currentCount = 0;
+
+          // go through entire array of messages and check to see if they contain emotes
+          for (let i = 0; i < this.chatArray.length; i++) {
+
+            // Divide the messages into both the message and timestamp portion
+            let chatMessage = this.chatArray[i]["message"].toLowerCase()
+            let chatTime = parseFloat(this.chatArray[i]["timestamp"])
+
+            // if the message time is greater than the bin time, increment the array
+            // by one and place the value in the proper place
+            if (chatTime >= timeArray[k]) {
+              emoteArrayCount[k] = currentCount
+              k++;
+              currentCount = 0;
+            }
+
+            // if the message contains the keyword; increment by 1
+            if (chatMessage.includes(searchWord)) {
+              currentCount++;
+            }
+          }
+          this.emoteYdata = emoteArrayCount
+        } else { this.emoteYdata = [] }
+      }
+    },
+    computed: {
+      durationLinearTime() {
+
+        if (this.chatArray && this.chatArray.length > 0) {
+
+          let lastMessageTime = parseFloat(this.chatArray[this.chatArray.length - 1]["timestamp"]);
+          lastMessageTime = lastMessageTime - (lastMessageTime % (1/3))
+
+          let timeArray = []
+
+          for (let i = 0; i <= lastMessageTime; i += (1/3)) {
+            timeArray.push(i.toFixed(4))
+          }
+
+          return timeArray;
+
+        } else { return []; }
+      
+      },
+      durationHHMMSS() {
+
+        if (this.chatArray && this.chatArray.length > 0) {
+          
+          let durationHHMMSS = []
+          const newTimeList = this.durationLinearTime.map((i) => this.formatTime(i))
+          durationHHMMSS = newTimeList
+
+          return durationHHMMSS
+
+        } else { return []; }
+
+      },
+      updatePlayerURL() {
+        const playerURL = 'https://player.twitch.tv/?video=v' + this.vodID + '&parent=raafaytariq.wixsite.com&autoplay=False&time=' + this.time
+        this.playerURL = playerURL
+      },
+      timeRegexCheck() {
+
+        const regex = /^(([0-9]{2})|([0-9])):[0-5][0-9]:[0-5][0-9]$/
+        
+        const startTime = this.viewedClip.startTime
+        const endTime = this.viewedClip.endTime  
+
+        const isStartTimeValid = regex.test(startTime)
+        const isEndTimeValid = regex.test(endTime)
+
+        const isStartTimeBeforeEndTime = startTime < endTime
+        const isEndTimeNotZero = endTime !== '0:00:00'
+
+        let errorMessage = ''
+        
+        if (!isStartTimeValid) {
+          errorMessage = errorMessage + 'Start Time is not a valid time (HH:MM:SS). ';
+        }
+        if (!isEndTimeValid) {
+          errorMessage = errorMessage + 'End Time is not a valid time (HH:MM:SS). ';
+        }
+        if (!isStartTimeBeforeEndTime) {
+          errorMessage = errorMessage + 'Start Time is greater than End Time. ';
+        }
+        if (!isEndTimeNotZero) {
+          errorMessage = errorMessage + 'End Time Cannot Be Zero. ';
+        } 
+        return  errorMessage
+      },
+      youtubeRegexCheck() { 
+
+        const regex = /^https:\/\/www\.youtube\.com\/watch\?v=(\w{11}).*$/
+        const isYoutubeURLValid = regex.test(this.url) 
+        
+        return isYoutubeURLValid
+
+      },
+      twitchRegexCheck() { 
+
+        const regex = /^https:\/\/www\.twitch\.tv\/videos\/(\d{10}).*$/
+        const isTwitchURLValid = regex.test(this.url)
+
+        return isTwitchURLValid
+
+      }
+    },
+    watch: {
+      durationHHMMSS() {
+        this.updateChart();
+      },
+      emoteYdata() {
+        this.updateChart();
+      },
+    }
+  }).mount('#app')
+
+</script>
+
+
+<style>
+.container {
+  display: flex;
+  justify-content: center;
+}
+.messageContainer {
+  display: block;
+  margin: 0 auto;
+}
+.box {
+    border: 1px solid #ccc; 
+    background-color: #f9f9f9; 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0;
+}
+.Capstonebox {
+    border: 1px solid #ccc; 
+    background-color: #a39dc5; 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0;
+}
+.clipList {
+  width: 240px;
+  padding-top: 0;
+}
+div {
+  margin: 10px;
+  padding: 0;
+}
+input {
+  margin: 10px;
+}
+button {
+  margin: 10px;
+  align-items: center;
+}
+</style>
